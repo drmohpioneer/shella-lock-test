@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Shella Lock Test</title>
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Shella Test">
+<meta name="theme-color" content="#0f766e">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="manifest" href="manifest.json">
+<style>
+  :root { --bg:#f6f7f5; --card:#fff; --ink:#1c2321; --muted:#5d6b67; --ok:#0f766e; --warn:#b45309; --line:#e3e7e5; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#111615; --card:#1a2120; --ink:#e8eeec; --muted:#9aa9a4; --ok:#2dd4bf; --warn:#fbbf24; --line:#2a3331; } }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:16px/1.45 -apple-system, system-ui, "Segoe UI", Roboto, sans-serif; padding:20px 16px 40px; }
+  main { max-width:520px; margin:0 auto; }
+  h1 { font-size:22px; margin:0 0 4px; }
+  .sub { color:var(--muted); margin:0 0 18px; font-size:14px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:16px; margin-bottom:14px; }
+  .big { font-size:40px; font-weight:700; letter-spacing:2px; text-align:center; margin:6px 0; }
+  .label { color:var(--muted); font-size:13px; text-align:center; }
+  .row { display:flex; justify-content:space-between; gap:12px; padding:7px 0; border-bottom:1px solid var(--line); font-size:15px; }
+  .row:last-child { border-bottom:0; }
+  .row b { text-align:right; word-break:break-all; }
+  .ok { color:var(--ok); } .warn { color:var(--warn); }
+  button { width:100%; padding:14px; border:0; border-radius:12px; background:var(--ok); color:#fff; font-size:16px; font-weight:600; }
+  ol { padding-left:20px; margin:0; } li { margin:6px 0; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Shella lock test</h1>
+  <p class="sub">Tests whether this phone keeps the same hidden ID. No personal data is stored or sent anywhere; everything stays on this phone.</p>
+
+  <div class="card">
+    <div class="label">This browser's ID</div>
+    <div class="big" id="idBig">...</div>
+    <div class="label" id="idNote"></div>
+  </div>
+
+  <div class="card" id="facts"></div>
+
+  <div class="card">
+    <button id="copy">Copy results</button>
+    <p class="sub" style="margin:10px 0 0">After each step, tap this and paste the results to Claude.</p>
+  </div>
+
+  <div class="card">
+    <b>Steps</b>
+    <ol>
+      <li>Open this link from WhatsApp. Note the ID.</li>
+      <li>Add to Home Screen (iPhone: Share, then "Add to Home Screen". Android: menu, then "Add to Home screen" or "Install").</li>
+      <li>Open the new icon. Is the ID the same? Is the trip code there?</li>
+      <li>Close everything. Open the icon again tomorrow. Same ID?</li>
+      <li>Open the link in a second browser. It should show a different ID.</li>
+    </ol>
+  </div>
+</main>
+<script>
+const ua = navigator.userAgent;
+const q = new URLSearchParams(location.search).get("t");
+const h = new URLSearchParams(location.hash.slice(1)).get("t");
+const standalone = window.navigator.standalone === true || matchMedia("(display-mode: standalone)").matches;
+const os = /iPhone|iPad|iPod/.test(ua) ? "iPhone" : /Android/.test(ua) ? "Android" : "Other";
+const browser = /WhatsApp/i.test(ua) ? "WhatsApp in-app"
+  : /FBAN|FBAV|Instagram/.test(ua) ? "Facebook/Instagram in-app"
+  : /CriOS/.test(ua) ? "Chrome (iOS)" : /FxiOS/.test(ua) ? "Firefox (iOS)" : /EdgiOS|EdgA/.test(ua) ? "Edge"
+  : /SamsungBrowser/.test(ua) ? "Samsung Internet" : /Chrome/.test(ua) ? "Chrome"
+  : /Safari/.test(ua) ? "Safari" : "Unknown";
+
+const newId = () => Array.from(crypto.getRandomValues(new Uint8Array(3)), b => b.toString(16).padStart(2, "0")).join("").toUpperCase();
+
+function lsGet(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
+function lsSet(k, v) { try { localStorage.setItem(k, v); return true; } catch (e) { return false; } }
+
+// IndexedDB is where Firebase keeps its login, so it's the store that matters most.
+function idb(op, val) {
+  return new Promise(res => {
+    try {
+      const r = indexedDB.open("shella-test", 1);
+      r.onupgradeneeded = () => r.result.createObjectStore("kv");
+      r.onerror = () => res(null);
+      r.onsuccess = () => {
+        const tx = r.result.transaction("kv", op === "get" ? "readonly" : "readwrite");
+        const st = tx.objectStore("kv");
+        const g = op === "get" ? st.get("id") : st.put(val, "id");
+        g.onsuccess = () => res(op === "get" ? (g.result || null) : val);
+        g.onerror = () => res(null);
+      };
+    } catch (e) { res(null); }
+  });
+}
+
+(async () => {
+  let idbId = await idb("get");
+  let lsId = lsGet("shella-id");
+  const wasNew = !idbId && !lsId;
+  const id = idbId || lsId || newId();
+  if (!idbId) idbId = await idb("put", id);
+  if (!lsId) { lsSet("shella-id", id); lsId = lsGet("shella-id"); }
+  if (!lsGet("shella-first")) lsSet("shella-first", new Date().toISOString());
+  const visits = (+lsGet("shella-visits") || 0) + 1;
+  lsSet("shella-visits", visits);
+
+  document.getElementById("idBig").textContent = id;
+  document.getElementById("idNote").innerHTML = wasNew
+    ? '<span class="warn">New ID created on this visit</span>'
+    : '<span class="ok">Remembered from before</span>';
+
+  const first = lsGet("shella-first");
+  const facts = [
+    ["Opened as", standalone ? "Home screen icon" : "Browser tab"],
+    ["Phone", os],
+    ["Browser", browser],
+    ["Trip code (?t=)", q || "missing"],
+    ["Trip code (#t=)", h || "missing"],
+    ["ID in IndexedDB", idbId || "blocked"],
+    ["ID in localStorage", lsId || "blocked"],
+    ["First seen", first ? new Date(first).toLocaleString() : "n/a"],
+    ["Visits here", visits],
+  ];
+  document.getElementById("facts").innerHTML = facts.map(([k, v]) => {
+    const bad = v === "missing" || v === "blocked";
+    return `<div class="row"><span>${k}</span><b class="${bad ? "warn" : ""}">${v}</b></div>`;
+  }).join("");
+
+  const text = [`ID: ${id} (${wasNew ? "NEW" : "remembered"})`, ...facts.map(([k, v]) => `${k}: ${v}`),
+    `URL: ${location.href}`, `UA: ${ua}`].join("\n");
+  document.getElementById("copy").onclick = async () => {
+    try { await navigator.clipboard.writeText(text); document.getElementById("copy").textContent = "Copied"; }
+    catch (e) { prompt("Copy this:", text); }
+  };
+})();
+</script>
+</body>
+</html>
