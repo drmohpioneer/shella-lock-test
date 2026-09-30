@@ -123,7 +123,8 @@ function idb(op, val) {
   ];
   document.getElementById("facts").innerHTML = facts.map(([k, v]) => {
     const bad = v === "missing" || v === "blocked";
-    return `<div class="row"><span>${k}</span><b class="${bad ? "warn" : ""}">${v}</b></div>`;
+    const esc = x => String(x).replace(/[&<>"']/g, c => "&#" + c.charCodeAt(0) + ";");
+    return `<div class="row"><span>${k}</span><b class="${bad ? "warn" : ""}">${esc(v)}</b></div>`;
   }).join("");
 
   const text = [`ID: ${id} (${wasNew ? "NEW" : "remembered"})`, ...facts.map(([k, v]) => `${k}: ${v}`),
